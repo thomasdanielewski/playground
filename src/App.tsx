@@ -185,10 +185,36 @@ export default function App() {
           <div className="h-px bg-white/[0.04]" />
 
           {/* Upload */}
-          <UploadPanel
-            onFileSelected={handleFile}
-            disabled={isProcessing}
-          />
+          {phase !== 'done' ? (
+            <UploadPanel
+              onFileSelected={handleFile}
+              disabled={isProcessing}
+            />
+          ) : (
+            <label className="w-full py-2.5 rounded-xl border border-white/10 bg-white/[0.04] hover:bg-white/[0.1] transition-colors text-[13px] font-medium text-zinc-300 hover:text-white flex items-center justify-center gap-2 cursor-pointer group">
+              <svg 
+                xmlns="http://www.w3.org/2000/svg" 
+                width="16" height="16" viewBox="0 0 24 24" fill="none" 
+                stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" 
+                strokeWidth="1.5"
+                className="text-zinc-400 group-hover:text-emerald-400 transition-colors"
+              >
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+              Upload New Image
+              <input 
+                type="file" 
+                accept="image/jpeg, image/png, image/webp, image/bmp, image/gif" 
+                className="hidden" 
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleFile(file);
+                }} 
+              />
+            </label>
+          )}
 
           {/* Progress / status */}
           <ProgressTracker
