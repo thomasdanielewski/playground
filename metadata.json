@@ -1,0 +1,5 @@
+{
+  "name": "2D to 3D Point Cloud",
+  "description": "Converts a 2D image into a 3D point cloud entirely in the browser using Transformers.js and Three.js.",
+  "requestFramePermissions": []
+}
