@@ -107,32 +107,10 @@ export class PointCloudRenderer {
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
-    // Create a circular alpha map for softer, rounded points instead of harsh squares
-    const canvas = document.createElement('canvas');
-    canvas.width = 64;
-    canvas.height = 64;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      // Draw a soft radial gradient for beautiful point blending
-      const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
-      grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
-      grad.addColorStop(0.5, 'rgba(255, 255, 255, 0.8)');
-      grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(32, 32, 32, 0, 2 * Math.PI);
-      ctx.fill();
-    }
-    const texture = new THREE.CanvasTexture(canvas);
-
     const mat = new THREE.PointsMaterial({
-      size: pointSize * 1.5, // Slightly larger to compensate for soft edges
+      size: pointSize,
       vertexColors: true,
       sizeAttenuation: true,
-      map: texture,
-      transparent: true,
-      alphaTest: 0.05, // Discard barely visible pixels
-      depthWrite: false, // Prevents points from wrongly occluding each other
     });
 
     this.points = new THREE.Points(geo, mat);
