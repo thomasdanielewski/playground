@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import type { MeshData } from './ImageProcessor';
 
 export type RendererType = 'webgpu' | 'webgl';
@@ -192,6 +193,40 @@ export class MeshRenderer {
   }
 
   getRendererType(): RendererType { return this._rendererType; }
+
+  exportGLB(): Promise<Blob> {
+    if (!this.mesh) return Promise.reject(new Error('No mesh to export'));
+
+    const exportMesh = new THREE.Mesh(
+      this.mesh.geometry,
+      new THREE.MeshStandardMaterial({
+        map: this.currentTexture,
+        side: THREE.FrontSide,
+        roughness: 0.8,
+        metalness: 0.0,
+      })
+    );
+    exportMesh.position.copy(this.mesh.position);
+
+    return new Promise((resolve, reject) => {
+      new GLTFExporter().parse(
+        exportMesh,
+        (result) => {
+          (exportMesh.material as THREE.Material).dispose();
+          if (result instanceof ArrayBuffer) {
+            resolve(new Blob([result], { type: 'model/gltf-binary' }));
+          } else {
+            reject(new Error('Unexpected GLTFExporter output'));
+          }
+        },
+        (error) => {
+          (exportMesh.material as THREE.Material).dispose();
+          reject(error);
+        },
+        { binary: true }
+      );
+    });
+  }
 
   dispose(): void {
     this._disposed = true;

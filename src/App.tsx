@@ -55,6 +55,7 @@ export default function App() {
   const [rendererType, setRendererType] = useState<RendererType | null>(null);
   const [browserError, setBrowserError] = useState<string | null>(null);
   const [materialMode, setMaterialMode] = useState<MaterialMode>('clay');
+  const [isExporting, setIsExporting] = useState(false);
 
   // ── Initialise Three.js renderer ────────────────────────
   useEffect(() => {
@@ -270,6 +271,45 @@ export default function App() {
                 </button>
               ))}
             </div>
+          )}
+
+          {/* Export GLB */}
+          {phase === 'done' && (
+            <button
+              onClick={async () => {
+                const renderer = rendererRef.current;
+                if (!renderer || isExporting) return;
+                setIsExporting(true);
+                try {
+                  const blob = await renderer.exportGLB();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = 'mesh.glb';
+                  a.click();
+                  URL.revokeObjectURL(url);
+                } catch (e) {
+                  console.error('[App] GLB export failed:', e);
+                } finally {
+                  setIsExporting(false);
+                }
+              }}
+              disabled={isExporting}
+              className="w-full py-2.5 rounded-xl border border-white/10 bg-white/[0.04] hover:bg-white/[0.1] transition-colors text-[13px] font-medium text-zinc-300 hover:text-white flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16" height="16" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"
+                strokeWidth="1.5"
+                className="text-zinc-400"
+              >
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              {isExporting ? 'Exporting…' : 'Export GLB'}
+            </button>
           )}
 
           {/* Progress / status */}
