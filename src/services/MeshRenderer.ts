@@ -3,10 +3,11 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { MeshData } from './ImageProcessor';
 
 export type RendererType = 'webgpu' | 'webgl';
+export type MaterialMode = 'clay' | 'textured';
 
 /**
  * Three.js mesh renderer with texture mapping, normals, and lighting.
- * Replaces the previous point cloud renderer for dramatically better 3D quality.
+ * Supports clay (white) and textured material modes.
  *
  * Use the static `create()` factory (async) instead of `new`.
  */
@@ -21,6 +22,7 @@ export class MeshRenderer {
   private animationFrameId = 0;
   private mountElement!: HTMLElement;
   private _rendererType: RendererType = 'webgl';
+  private _materialMode: MaterialMode = 'clay';
   private _disposed = false;
 
   private constructor() {}
@@ -41,18 +43,21 @@ export class MeshRenderer {
     // Renderer (WebGPU → WebGL fallback)
     r.renderer = await r.initRenderer(mountElement);
 
-    // Lighting
-    const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+    // Lighting — 3-point + rim for clay material
+    const ambient = new THREE.AmbientLight(0xffffff, 0.5);
     r.scene.add(ambient);
 
-    const directional = new THREE.DirectionalLight(0xffffff, 0.8);
-    directional.position.set(1, 1, 2);
-    r.scene.add(directional);
+    const key = new THREE.DirectionalLight(0xffffff, 1.0);
+    key.position.set(1, 1, 2);
+    r.scene.add(key);
 
-    // Back-fill light for less harsh shadows
-    const backLight = new THREE.DirectionalLight(0xffffff, 0.3);
-    backLight.position.set(-1, -0.5, -1);
-    r.scene.add(backLight);
+    const fill = new THREE.DirectionalLight(0xffffff, 0.4);
+    fill.position.set(-1, -0.5, -1);
+    r.scene.add(fill);
+
+    const rim = new THREE.DirectionalLight(0xffffff, 0.4);
+    rim.position.set(0, 0, -2);
+    r.scene.add(rim);
 
     // Controls
     r.controls = new OrbitControls(r.camera, r.renderer.domElement);
@@ -104,6 +109,23 @@ export class MeshRenderer {
     this.renderer.render(this.scene, this.camera);
   };
 
+  private createMaterial(): THREE.Material {
+    if (this._materialMode === 'clay') {
+      return new THREE.MeshStandardMaterial({
+        color: 0xe8e8e8,
+        roughness: 1.0,
+        metalness: 0.0,
+        side: THREE.FrontSide,
+      });
+    }
+    return new THREE.MeshStandardMaterial({
+      map: this.currentTexture,
+      side: THREE.FrontSide,
+      roughness: 0.8,
+      metalness: 0.0,
+    });
+  }
+
   // ── Public API ──────────────────────────────────────────
 
   async setMesh(meshData: MeshData, imageUrl: string): Promise<void> {
@@ -116,7 +138,7 @@ export class MeshRenderer {
     geo.setIndex(new THREE.BufferAttribute(meshData.indices, 1));
     geo.computeVertexNormals();
 
-    // Load texture
+    // Load texture (needed for textured mode toggle)
     const texture = await new Promise<THREE.Texture>((resolve, reject) => {
       new THREE.TextureLoader().load(
         imageUrl,
@@ -131,15 +153,7 @@ export class MeshRenderer {
     });
     this.currentTexture = texture;
 
-    // Material — PBR standard for proper lighting interaction
-    const mat = new THREE.MeshStandardMaterial({
-      map: texture,
-      side: THREE.DoubleSide,
-      roughness: 0.8,
-      metalness: 0.0,
-    });
-
-    this.mesh = new THREE.Mesh(geo, mat);
+    this.mesh = new THREE.Mesh(geo, this.createMaterial());
 
     // Centre on Z
     geo.computeBoundingBox();
@@ -151,6 +165,16 @@ export class MeshRenderer {
 
     this.scene.add(this.mesh);
   }
+
+  setMaterialMode(mode: MaterialMode): void {
+    this._materialMode = mode;
+    if (this.mesh) {
+      (this.mesh.material as THREE.Material).dispose();
+      this.mesh.material = this.createMaterial();
+    }
+  }
+
+  getMaterialMode(): MaterialMode { return this._materialMode; }
 
   resetCamera(): void {
     this.camera.position.set(0, -0.15, 2);

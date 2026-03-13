@@ -4,7 +4,7 @@ import type { ModelDownloadProgress } from './services/DepthEstimationService';
 import { BackgroundRemovalService } from './services/BackgroundRemovalService';
 import { ImageProcessor } from './services/ImageProcessor';
 import { MeshRenderer } from './services/MeshRenderer';
-import type { RendererType } from './services/MeshRenderer';
+import type { RendererType, MaterialMode } from './services/MeshRenderer';
 import { bilateralFilter } from './services/BilateralFilter';
 import UploadPanel from './components/UploadPanel';
 import ProgressTracker from './components/ProgressTracker';
@@ -54,6 +54,7 @@ export default function App() {
   const [errorMessage, setErrorMessage] = useState<string | undefined>();
   const [rendererType, setRendererType] = useState<RendererType | null>(null);
   const [browserError, setBrowserError] = useState<string | null>(null);
+  const [materialMode, setMaterialMode] = useState<MaterialMode>('clay');
 
   // ── Initialise Three.js renderer ────────────────────────
   useEffect(() => {
@@ -132,11 +133,18 @@ export default function App() {
       // 4. Build mesh
       setPhase('building');
 
-      // Bilateral filter on depth map for smoother surfaces
-      const smoothedDepth = bilateralFilter(
+      // Two-pass bilateral filter for smoother surfaces with edge preservation
+      const pass1 = bilateralFilter(
         depthResult.depthData,
         depthResult.width,
-        depthResult.height
+        depthResult.height,
+        5, 4.0, 20
+      );
+      const smoothedDepth = bilateralFilter(
+        pass1,
+        depthResult.width,
+        depthResult.height,
+        5, 4.0, 20
       );
 
       // Resize mask to match depth dimensions if they differ
@@ -240,6 +248,28 @@ export default function App() {
                 }}
               />
             </label>
+          )}
+
+          {/* Material toggle */}
+          {phase === 'done' && (
+            <div className="flex gap-2">
+              {(['clay', 'textured'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => {
+                    setMaterialMode(mode);
+                    rendererRef.current?.setMaterialMode(mode);
+                  }}
+                  className={`flex-1 py-1.5 rounded-lg text-[12px] font-medium transition-colors ${
+                    materialMode === mode
+                      ? 'bg-white/15 text-white'
+                      : 'bg-white/[0.04] text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.07]'
+                  }`}
+                >
+                  {mode === 'clay' ? 'Clay' : 'Textured'}
+                </button>
+              ))}
+            </div>
           )}
 
           {/* Progress / status */}
