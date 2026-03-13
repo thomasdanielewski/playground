@@ -156,6 +156,58 @@ export class ImageProcessor {
   }
 
   /**
+   * Replaces depth values at the foreground–background boundary with the
+   * average depth of interior (non-boundary) foreground pixels.
+   * Prevents bilateral-filter background leakage from tearing the silhouette.
+   */
+  private healDepthBoundary(
+    depth: Uint8Array,
+    mask: Uint8Array,
+    width: number,
+    height: number,
+    searchRadius = 4
+  ): Uint8Array {
+    // Mark interior pixels: foreground with no background neighbour within 3px
+    const interior = new Uint8Array(width * height);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const i = y * width + x;
+        if (mask[i] < 128) continue;
+        let ok = true;
+        outer: for (let dy = -3; dy <= 3; dy++) {
+          for (let dx = -3; dx <= 3; dx++) {
+            const nx = x + dx, ny = y + dy;
+            if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+            if (mask[ny * width + nx] < 128) { ok = false; break outer; }
+          }
+        }
+        if (ok) interior[i] = 1;
+      }
+    }
+
+    const output = new Uint8Array(depth);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const i = y * width + x;
+        if (mask[i] < 128 || interior[i]) continue; // skip bg and interior pixels
+
+        // Replace boundary depth with average of nearby interior pixels
+        let sum = 0, count = 0;
+        for (let dy = -searchRadius; dy <= searchRadius; dy++) {
+          for (let dx = -searchRadius; dx <= searchRadius; dx++) {
+            const nx = x + dx, ny = y + dy;
+            if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+            const ni = ny * width + nx;
+            if (interior[ni]) { sum += depth[ni]; count++; }
+          }
+        }
+        if (count > 0) output[i] = Math.round(sum / count);
+      }
+    }
+    return output;
+  }
+
+  /**
    * Build a triangle mesh from depth data with optional foreground mask.
    * Skips background triangles and depth-discontinuity triangles.
    */
@@ -179,6 +231,10 @@ export class ImageProcessor {
     if (mask) {
       mask = this.erodeMask(mask, width, height, 2);
       mask = this.largestConnectedComponent(mask, width, height);
+      // Heal depth at mask boundaries: replaces edge-pixel depths (contaminated by
+      // bilateral-filter background bleed) with interior-foreground averages.
+      // Without this, background depth leaks into silhouette pixels and causes tearing.
+      depthData = this.healDepthBoundary(depthData, mask, width, height);
     }
 
     // Adaptive depth normalization: find actual range used by foreground pixels
@@ -189,7 +245,7 @@ export class ImageProcessor {
       if (depthData[i] > dMax) dMax = depthData[i];
     }
     const dRange = Math.max(dMax - dMin, 1);
-    const DEPTH_THRESHOLD = dRange * 0.12;
+    const DEPTH_THRESHOLD = dRange * 0.20; // was 0.12; increased to reduce holes in smooth areas
 
     const scale = 2.0 / Math.max(width, height);
 

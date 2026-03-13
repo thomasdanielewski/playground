@@ -9,7 +9,8 @@
       "mcp__Claude_Preview__preview_start",
       "Bash(where npm:*)",
       "Read(//c/Users/Thomas/Downloads/**)",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173/)"
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173/)",
+      "Bash(npm --version)"
     ]
   }
 }
