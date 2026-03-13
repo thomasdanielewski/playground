@@ -1,5 +1,5 @@
 import { Cpu, Zap } from 'lucide-react';
-import type { RendererType } from '../services/PointCloudRenderer';
+import type { RendererType } from '../services/MeshRenderer';
 
 interface Props {
   rendererType: RendererType | null;

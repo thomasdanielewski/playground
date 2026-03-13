@@ -25,7 +25,7 @@ export interface DepthEstimationResult {
   inferenceTimeMs: number;
 }
 
-const MODEL_ID = 'Xenova/depth-anything-small-hf';
+const MODEL_ID = 'onnx-community/depth-anything-v2-base';
 
 /**
  * Encapsulates the Transformers.js depth-estimation pipeline.
@@ -56,10 +56,12 @@ export class DepthEstimationService {
 
     this.loadPromise = (async () => {
       try {
+        const hasWebGPU = typeof navigator !== 'undefined' && 'gpu' in navigator;
         this.estimator = await (pipeline as any)(
           'depth-estimation',
           MODEL_ID,
           {
+            device: hasWebGPU ? 'webgpu' : 'wasm',
             progress_callback: (info: Record<string, unknown>) => {
               if (!onProgress) return;
 

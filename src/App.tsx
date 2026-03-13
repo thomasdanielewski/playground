@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DepthEstimationService } from './services/DepthEstimationService';
 import type { ModelDownloadProgress } from './services/DepthEstimationService';
+import { BackgroundRemovalService } from './services/BackgroundRemovalService';
 import { ImageProcessor } from './services/ImageProcessor';
-import { PointCloudRenderer } from './services/PointCloudRenderer';
-import type { RendererType } from './services/PointCloudRenderer';
+import { MeshRenderer } from './services/MeshRenderer';
+import type { RendererType } from './services/MeshRenderer';
+import { bilateralFilter } from './services/BilateralFilter';
 import UploadPanel from './components/UploadPanel';
 import ProgressTracker from './components/ProgressTracker';
 import type { Phase } from './components/ProgressTracker';
@@ -37,15 +39,17 @@ function checkBrowserSupport(): string | null {
 export default function App() {
   // Services (stable across renders)
   const depthServiceRef = useRef(new DepthEstimationService());
+  const bgServiceRef = useRef(new BackgroundRemovalService());
   const imageProcessorRef = useRef(new ImageProcessor());
-  const rendererRef = useRef<PointCloudRenderer | null>(null);
+  const rendererRef = useRef<MeshRenderer | null>(null);
   const mountRef = useRef<HTMLDivElement>(null);
 
   // UI state
   const [phase, setPhase] = useState<Phase>('idle');
-  const [downloadProgress, setDownloadProgress] = useState<ModelDownloadProgress | null>(null);
+  const [depthDownloadProgress, setDepthDownloadProgress] = useState<ModelDownloadProgress | null>(null);
+  const [bgDownloadProgress, setBgDownloadProgress] = useState<ModelDownloadProgress | null>(null);
   const [inferenceTimeMs, setInferenceTimeMs] = useState<number | undefined>();
-  const [pointCount, setPointCount] = useState<number | undefined>();
+  const [triangleCount, setTriangleCount] = useState<number | undefined>();
   const [wasDownscaled, setWasDownscaled] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | undefined>();
   const [rendererType, setRendererType] = useState<RendererType | null>(null);
@@ -53,7 +57,6 @@ export default function App() {
 
   // ── Initialise Three.js renderer ────────────────────────
   useEffect(() => {
-    // Browser support gate
     const unsupported = checkBrowserSupport();
     if (unsupported) {
       setBrowserError(unsupported);
@@ -66,7 +69,7 @@ export default function App() {
 
     (async () => {
       try {
-        const renderer = await PointCloudRenderer.create(mountRef.current!);
+        const renderer = await MeshRenderer.create(mountRef.current!);
         if (disposed) { renderer.dispose(); return; }
         rendererRef.current = renderer;
         setRendererType(renderer.getRendererType());
@@ -85,54 +88,77 @@ export default function App() {
       rendererRef.current?.dispose();
       rendererRef.current = null;
       depthServiceRef.current.dispose();
+      bgServiceRef.current.dispose();
     };
   }, []);
 
-  // ── Pipeline: file → depth → point cloud ────────────────
+  // ── Pipeline: file → depth + bg removal → mesh ──────────
   const handleFile = useCallback(async (file: File) => {
     const renderer = rendererRef.current;
     if (!renderer) return;
 
     // Reset state
     setPhase('downloading');
-    setDownloadProgress(null);
+    setDepthDownloadProgress(null);
+    setBgDownloadProgress(null);
     setInferenceTimeMs(undefined);
-    setPointCount(undefined);
+    setTriangleCount(undefined);
     setWasDownscaled(false);
     setErrorMessage(undefined);
 
     try {
-      // 1. Load model (cached after first download)
-      const depthService = depthServiceRef.current;
-      await depthService.loadModel((info) => setDownloadProgress(info));
-
-      // 2. Process image (downscale if needed)
+      // 1. Process image (downscale if needed)
       const imgProc = imageProcessorRef.current;
       const processed = await imgProc.processImage(file);
       setWasDownscaled(processed.wasDownscaled);
 
-      // 3. Estimate depth
+      // 2. Load both models in parallel (cached after first download)
+      const depthService = depthServiceRef.current;
+      const bgService = bgServiceRef.current;
+
+      await Promise.all([
+        depthService.loadModel((info) => setDepthDownloadProgress(info)),
+        bgService.loadModel((info) => setBgDownloadProgress(info)),
+      ]);
+
+      // 3. Run depth estimation + background segmentation in parallel
       setPhase('estimating');
-      const depthResult = await depthService.estimateDepth(processed.url);
+      const [depthResult, bgResult] = await Promise.all([
+        depthService.estimateDepth(processed.url),
+        bgService.segment(processed.url),
+      ]);
       setInferenceTimeMs(depthResult.inferenceTimeMs);
 
-      // 4. Build point cloud
+      // 4. Build mesh
       setPhase('building');
-      const colorData = await imgProc.extractColors(
-        processed.url,
-        depthResult.width,
-        depthResult.height
-      );
-      const cloud = imgProc.buildPointCloud(
-        depthResult.depthData,
-        colorData,
-        depthResult.width,
-        depthResult.height
-      );
-      setPointCount(cloud.pointCount);
 
-      // 5. Render
-      renderer.setPointCloud(cloud.positions, cloud.colors, cloud.pointSize);
+      // Bilateral filter on depth map for smoother surfaces
+      const smoothedDepth = bilateralFilter(
+        depthResult.depthData,
+        depthResult.width,
+        depthResult.height
+      );
+
+      // Resize mask to match depth dimensions if they differ
+      const mask = imgProc.resizeMask(
+        bgResult.mask,
+        bgResult.width,
+        bgResult.height,
+        depthResult.width,
+        depthResult.height
+      );
+
+      // Build triangle mesh
+      const meshData = imgProc.buildMeshData(
+        smoothedDepth,
+        depthResult.width,
+        depthResult.height,
+        mask
+      );
+      setTriangleCount(meshData.triangleCount);
+
+      // 5. Render with texture
+      await renderer.setMesh(meshData, processed.url);
       renderer.resetCamera();
       setPhase('done');
     } catch (err) {
@@ -148,7 +174,7 @@ export default function App() {
       <div className="fixed inset-0 bg-zinc-950 flex items-center justify-center p-8 z-50">
         <div className="glass-panel rounded-2xl p-8 max-w-md text-center">
           <div className="w-12 h-12 mx-auto mb-4 rounded-xl bg-red-400/10 flex items-center justify-center">
-            <span className="text-red-400 text-xl">⚠</span>
+            <span className="text-red-400 text-xl">!</span>
           </div>
           <h2 className="text-lg font-medium text-zinc-100 mb-2">Browser Not Supported</h2>
           <p className="text-sm text-zinc-400 leading-relaxed">{browserError}</p>
@@ -172,10 +198,10 @@ export default function App() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-[15px] font-semibold tracking-tight">
-                2D → 3D Point Cloud
+                2D → 3D Mesh
               </h1>
               <p className="text-[10px] text-zinc-500 mt-0.5 uppercase tracking-widest">
-                AI Depth Estimation
+                AI Depth + Background Removal
               </p>
             </div>
             <StatusBadge rendererType={rendererType} />
@@ -192,10 +218,10 @@ export default function App() {
             />
           ) : (
             <label className="w-full py-2.5 rounded-xl border border-white/10 bg-white/[0.04] hover:bg-white/[0.1] transition-colors text-[13px] font-medium text-zinc-300 hover:text-white flex items-center justify-center gap-2 cursor-pointer group">
-              <svg 
-                xmlns="http://www.w3.org/2000/svg" 
-                width="16" height="16" viewBox="0 0 24 24" fill="none" 
-                stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" 
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16" height="16" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"
                 strokeWidth="1.5"
                 className="text-zinc-400 group-hover:text-emerald-400 transition-colors"
               >
@@ -204,14 +230,14 @@ export default function App() {
                 <line x1="12" y1="3" x2="12" y2="15"></line>
               </svg>
               Upload New Image
-              <input 
-                type="file" 
-                accept="image/jpeg, image/png, image/webp, image/bmp, image/gif" 
-                className="hidden" 
+              <input
+                type="file"
+                accept="image/jpeg, image/png, image/webp, image/bmp, image/gif"
+                className="hidden"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (file) handleFile(file);
-                }} 
+                }}
               />
             </label>
           )}
@@ -219,9 +245,10 @@ export default function App() {
           {/* Progress / status */}
           <ProgressTracker
             phase={phase}
-            downloadProgress={downloadProgress}
+            depthDownloadProgress={depthDownloadProgress}
+            bgDownloadProgress={bgDownloadProgress}
             inferenceTimeMs={inferenceTimeMs}
-            pointCount={pointCount}
+            triangleCount={triangleCount}
             wasDownscaled={wasDownscaled}
             errorMessage={errorMessage}
           />
