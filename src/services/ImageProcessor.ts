@@ -90,6 +90,72 @@ export class ImageProcessor {
   }
 
   /**
+   * Erode a binary mask by `radius` pixels to remove fringing at object edges.
+   */
+  erodeMask(mask: Uint8Array, width: number, height: number, radius = 2): Uint8Array {
+    const output = new Uint8Array(mask.length);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        if (mask[y * width + x] < 128) continue;
+        let ok = true;
+        outer: for (let dy = -radius; dy <= radius; dy++) {
+          for (let dx = -radius; dx <= radius; dx++) {
+            const nx = x + dx, ny = y + dy;
+            if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+            if (mask[ny * width + nx] < 128) { ok = false; break outer; }
+          }
+        }
+        if (ok) output[y * width + x] = 255;
+      }
+    }
+    return output;
+  }
+
+  /**
+   * Return a copy of the mask with only the largest 4-connected foreground region kept.
+   * Eliminates disconnected background fragments that leaked through segmentation.
+   */
+  largestConnectedComponent(mask: Uint8Array, width: number, height: number): Uint8Array {
+    const label = new Int32Array(mask.length).fill(-1);
+    let bestId = -1, bestSize = 0;
+    let id = 0;
+
+    for (let start = 0; start < mask.length; start++) {
+      if (mask[start] < 128 || label[start] !== -1) continue;
+
+      // BFS
+      const queue: number[] = [start];
+      label[start] = id;
+      let head = 0, size = 0;
+      while (head < queue.length) {
+        const idx = queue[head++];
+        size++;
+        const x = idx % width, y = (idx - x) / width;
+        const neighbors = [
+          y > 0 ? idx - width : -1,
+          y < height - 1 ? idx + width : -1,
+          x > 0 ? idx - 1 : -1,
+          x < width - 1 ? idx + 1 : -1,
+        ];
+        for (const n of neighbors) {
+          if (n >= 0 && mask[n] >= 128 && label[n] === -1) {
+            label[n] = id;
+            queue.push(n);
+          }
+        }
+      }
+      if (size > bestSize) { bestSize = size; bestId = id; }
+      id++;
+    }
+
+    const output = new Uint8Array(mask.length);
+    for (let i = 0; i < mask.length; i++) {
+      if (label[i] === bestId) output[i] = 255;
+    }
+    return output;
+  }
+
+  /**
    * Build a triangle mesh from depth data with optional foreground mask.
    * Skips background triangles and depth-discontinuity triangles.
    */
@@ -98,7 +164,7 @@ export class ImageProcessor {
     width: number,
     height: number,
     mask: Uint8Array | null,
-    depthScale = 1.0,
+    depthScale = 1.5,
     shellThickness = 0.15
   ): MeshData {
     const numVertices = width * height;
@@ -106,6 +172,13 @@ export class ImageProcessor {
     const requiredBytes = numVertices * 2 * (3 + 2) * 4;
     if (requiredBytes > 2_000_000_000) {
       throw new RangeError(`Mesh requires ~${(requiredBytes / 1e9).toFixed(1)} GB — reduce image resolution.`);
+    }
+
+    // Clean up mask: erode edges then keep only the largest connected foreground region.
+    // This removes background fringing and disconnected artifact islands (e.g. watermarks).
+    if (mask) {
+      mask = this.erodeMask(mask, width, height, 2);
+      mask = this.largestConnectedComponent(mask, width, height);
     }
 
     // Adaptive depth normalization: find actual range used by foreground pixels
