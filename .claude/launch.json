@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "playground",
-      "runtimeExecutable": "C:\\Users\\Thomas\\Documents\\GitHub\\playground\\node_modules\\.bin\\vite.cmd",
-      "runtimeArgs": ["--port=5173", "--host=localhost"],
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["node_modules/vite/bin/vite.js", "--port=5173", "--host=localhost"],
       "port": 5173
     }
   ]

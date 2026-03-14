@@ -1,12 +1,8 @@
 import { pipeline, env } from '@huggingface/transformers';
 import type { RawImage } from '@huggingface/transformers';
 
-// Force remote model loading from Hugging Face Hub
 env.allowLocalModels = false;
 
-/**
- * Progress event emitted during model download.
- */
 export interface ModelDownloadProgress {
   status: 'initiate' | 'downloading' | 'ready';
   file?: string;
@@ -15,9 +11,6 @@ export interface ModelDownloadProgress {
   totalBytes?: number;
 }
 
-/**
- * Result of a depth estimation inference pass.
- */
 export interface DepthEstimationResult {
   depthData: Uint8Array;
   width: number;
@@ -27,32 +20,24 @@ export interface DepthEstimationResult {
 
 const MODEL_ID = 'onnx-community/depth-anything-v2-base';
 
-/**
- * Encapsulates the Transformers.js depth-estimation pipeline.
- *
- * Usage:
- *   const service = new DepthEstimationService();
- *   await service.loadModel(onProgress);
- *   const result = await service.estimateDepth(imageUrl);
- *   service.dispose();
- */
+function checkAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+}
+
 export class DepthEstimationService {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private estimator: any = null;
   private isModelLoaded = false;
   private loadPromise: Promise<void> | null = null;
 
-  /**
-   * Downloads and initializes the depth-estimation model.
-   * Safe to call multiple times — subsequent calls share the same promise.
-   */
   async loadModel(
-    onProgress?: (info: ModelDownloadProgress) => void
+    onProgress?: (info: ModelDownloadProgress) => void,
+    signal?: AbortSignal
   ): Promise<void> {
     if (this.isModelLoaded) return;
-
-    // Prevent concurrent loads
     if (this.loadPromise) return this.loadPromise;
+
+    checkAborted(signal);
 
     this.loadPromise = (async () => {
       try {
@@ -63,6 +48,7 @@ export class DepthEstimationService {
           {
             device: hasWebGPU ? 'webgpu' : 'wasm',
             progress_callback: (info: Record<string, unknown>) => {
+              checkAborted(signal);
               if (!onProgress) return;
 
               const status = info.status as string;
@@ -96,20 +82,18 @@ export class DepthEstimationService {
     return this.loadPromise;
   }
 
-  /**
-   * Runs depth estimation on the given image URL.
-   * Model must be loaded first via `loadModel()`.
-   */
-  async estimateDepth(imageUrl: string): Promise<DepthEstimationResult> {
+  async estimateDepth(imageUrl: string, signal?: AbortSignal): Promise<DepthEstimationResult> {
     if (!this.estimator) {
-      throw new Error(
-        'Model not loaded. Call loadModel() before estimateDepth().'
-      );
+      throw new Error('Model not loaded. Call loadModel() before estimateDepth().');
     }
+
+    checkAborted(signal);
 
     const t0 = performance.now();
     const result = await this.estimator(imageUrl);
     const inferenceTimeMs = performance.now() - t0;
+
+    checkAborted(signal);
 
     const output = Array.isArray(result) ? result[0] : result;
     const depthImage = (output as Record<string, unknown>).depth as RawImage;
@@ -122,12 +106,10 @@ export class DepthEstimationService {
     };
   }
 
-  /** Returns true if the model has been loaded and is ready. */
   get ready(): boolean {
     return this.isModelLoaded;
   }
 
-  /** Releases all model resources. */
   dispose(): void {
     this.estimator = null;
     this.isModelLoaded = false;

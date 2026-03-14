@@ -17,6 +17,8 @@ interface Props {
   triangleCount?: number;
   wasDownscaled?: boolean;
   errorMessage?: string;
+  onRetry?: () => void;
+  onCancel?: () => void;
 }
 
 function formatBytes(bytes: number): string {
@@ -50,12 +52,12 @@ function DownloadBar({ label, progress }: { label: string; progress: ModelDownlo
           {progress.progress}%
         </span>
       </div>
-      <div className="w-full h-1 bg-white/[0.04] rounded-full overflow-hidden">
+      <div className="w-full h-1 bg-white/[0.06] rounded-full overflow-hidden">
         <div
-          className="h-full rounded-full transition-all duration-500 ease-out"
+          className="h-full rounded-full transition-all duration-500 ease-spring"
           style={{
             width: `${progress.progress}%`,
-            background: 'linear-gradient(90deg, #10b981, #34d399)',
+            background: 'linear-gradient(90deg, var(--accent), var(--accent-light))',
           }}
         />
       </div>
@@ -73,6 +75,8 @@ function DownloadBar({ label, progress }: { label: string; progress: ModelDownlo
   );
 }
 
+const isProcessingPhase = (p: Phase) => p === 'downloading' || p === 'estimating' || p === 'building';
+
 export default function ProgressTracker({
   phase,
   depthDownloadProgress,
@@ -81,6 +85,8 @@ export default function ProgressTracker({
   triangleCount,
   wasDownscaled,
   errorMessage,
+  onRetry,
+  onCancel,
 }: Props) {
   if (phase === 'idle') return null;
 
@@ -129,11 +135,24 @@ export default function ProgressTracker({
         </div>
       )}
 
+      {/* ── Cancel button during processing ────── */}
+      {isProcessingPhase(phase) && onCancel && (
+        <button
+          onClick={onCancel}
+          className="w-full py-1.5 rounded-lg text-[11px] font-medium text-zinc-500 hover:text-zinc-300 bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.06] transition-colors"
+        >
+          Cancel
+        </button>
+      )}
+
       {/* ── Done ────────────────────────────────── */}
       {phase === 'done' && (
         <div className="flex flex-col gap-2 animate-fade-in">
           <div className="flex items-center gap-2">
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            <svg width="12" height="12" viewBox="0 0 12 12" className="text-emerald-400">
+              <circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+              <path d="M3.5 6L5.5 8L8.5 4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
             <span className="text-[11px] text-emerald-400 uppercase tracking-widest font-medium">
               Complete
             </span>
@@ -141,7 +160,7 @@ export default function ProgressTracker({
 
           <div className="grid grid-cols-2 gap-2">
             {inferenceTimeMs != null && (
-              <div className="rounded-lg bg-white/[0.03] border border-white/[0.04] px-3 py-2">
+              <div className="rounded-lg bg-white/[0.03] border border-white/[0.06] px-3 py-2">
                 <p className="text-[10px] text-zinc-500 uppercase tracking-wider">Inference</p>
                 <p className="text-[13px] font-mono text-zinc-200 mt-0.5">
                   {(inferenceTimeMs / 1000).toFixed(2)}s
@@ -149,7 +168,7 @@ export default function ProgressTracker({
               </div>
             )}
             {triangleCount != null && (
-              <div className="rounded-lg bg-white/[0.03] border border-white/[0.04] px-3 py-2">
+              <div className="rounded-lg bg-white/[0.03] border border-white/[0.06] px-3 py-2">
                 <p className="text-[10px] text-zinc-500 uppercase tracking-wider">Triangles</p>
                 <p className="text-[13px] font-mono text-zinc-200 mt-0.5">
                   {triangleCount.toLocaleString()}
@@ -163,16 +182,19 @@ export default function ProgressTracker({
               Image was downscaled to fit processing limits.
             </p>
           )}
-
-          <p className="text-[10px] text-zinc-500 leading-tight">
-            Drag to rotate · scroll to zoom · right-click to pan
-          </p>
         </div>
+      )}
+
+      {/* ── Orbit hint (shown during building + done) ── */}
+      {(phase === 'done' || phase === 'building') && (
+        <p className="text-[10px] text-zinc-500 leading-tight">
+          Drag to rotate · scroll to zoom · right-click to pan
+        </p>
       )}
 
       {/* ── Error ───────────────────────────────── */}
       {phase === 'error' && (
-        <div className="flex flex-col gap-1 animate-fade-in">
+        <div className="flex flex-col gap-2 animate-fade-in">
           <div className="flex items-center gap-2">
             <div className="w-1.5 h-1.5 rounded-full bg-red-400" />
             <span className="text-[11px] text-red-400 uppercase tracking-widest font-medium">
@@ -182,6 +204,14 @@ export default function ProgressTracker({
           <p className="text-[11px] text-red-300/80 leading-snug">
             {errorMessage || 'An unexpected error occurred.'}
           </p>
+          {onRetry && (
+            <button
+              onClick={onRetry}
+              className="w-full py-1.5 rounded-lg text-[11px] font-medium text-zinc-300 hover:text-white bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.06] transition-colors"
+            >
+              Try Again
+            </button>
+          )}
         </div>
       )}
     </div>

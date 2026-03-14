@@ -5,6 +5,21 @@
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
+/* ── Design tokens ────────────────────────────────── */
+
+:root {
+  --accent: #10b981;
+  --accent-light: #34d399;
+  --accent-glow: rgba(16, 185, 129, 0.08);
+  --divider: rgba(255, 255, 255, 0.06);
+  --surface: rgba(255, 255, 255, 0.04);
+  --panel-bg: rgba(14, 14, 17, 0.82);
+  --blur: 16px;
+  --spring: cubic-bezier(0.22, 1, 0.36, 1);
+  --radius-sm: 0.5rem;
+  --radius-lg: 1rem;
+}
+
 /* ── Base ──────────────────────────────────────────── */
 
 html, body, #root {
@@ -31,10 +46,10 @@ body {
 /* ── Glass panel ───────────────────────────────────── */
 
 .glass-panel {
-  background: rgba(14, 14, 17, 0.82);
-  backdrop-filter: blur(24px) saturate(140%);
-  -webkit-backdrop-filter: blur(24px) saturate(140%);
-  border: 0.5px solid rgba(255, 255, 255, 0.06);
+  background: var(--panel-bg);
+  backdrop-filter: blur(var(--blur)) saturate(140%);
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(140%);
+  border: 0.5px solid var(--divider);
   box-shadow:
     0 0 0 0.5px rgba(255, 255, 255, 0.02),
     0 24px 80px rgba(0, 0, 0, 0.55),
@@ -48,13 +63,12 @@ body {
   to   { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.3; }
+.animate-fade-in {
+  animation: fade-in 0.35s var(--spring) both;
 }
 
-.animate-fade-in {
-  animation: fade-in 0.35s ease-out both;
+.ease-spring {
+  transition-timing-function: var(--spring);
 }
 
 /* ── Mono text ─────────────────────────────────────── */
@@ -68,4 +82,85 @@ body {
 canvas {
   display: block;
   outline: none;
+}
+
+/* ── Range slider (depth/quality controls) ─────────── */
+
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 2px;
+  outline: none;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: 2px solid #08080a;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: 2px solid #08080a;
+}
+
+/* ── Mobile layout ─────────────────────────────────── */
+
+@media (max-width: 640px) {
+  .control-panel {
+    top: auto !important;
+    bottom: 0 !important;
+    align-items: stretch !important;
+    padding: 0 !important;
+  }
+
+  .control-panel-inner {
+    max-width: 100% !important;
+    max-height: 60vh;
+    overflow-y: auto;
+    border-radius: 1rem 1rem 0 0 !important;
+  }
+
+  .mobile-handle {
+    display: block !important;
+  }
+}
+
+/* ── Drop overlay ──────────────────────────────────── */
+
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 8, 10, 0.8);
+  backdrop-filter: blur(8px);
+  border: 2px dashed var(--accent);
+  pointer-events: none;
+  animation: fade-in 0.2s var(--spring) both;
+}
+
+/* ── Skeleton pulse ────────────────────────────────── */
+
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.04; }
+  50%      { opacity: 0.08; }
+}
+
+.skeleton-pulse {
+  animation: skeleton-pulse 2s ease-in-out infinite;
+  background: white;
 }
