@@ -276,26 +276,21 @@ export function buildMeshData(
   normals.set(frontNormals);
   uvs.set(frontUvs);
 
-  // Back surface — displace along inverted normal for rounded back
+  // Back surface — flat Z offset (normals used for lighting only, not geometry)
   const backOffset = numVertices;
   for (let i = 0; i < numVertices; i++) {
     const i3 = i * 3;
     const bi3 = (i + backOffset) * 3;
     const bi2 = (i + backOffset) * 2;
 
-    const nx = frontNormals[i3];
-    const ny = frontNormals[i3 + 1];
-    const nz = frontNormals[i3 + 2];
+    positions[bi3] = frontPositions[i3];
+    positions[bi3 + 1] = frontPositions[i3 + 1];
+    positions[bi3 + 2] = frontPositions[i3 + 2] - shellThickness;
 
-    // Displace along inverted normal for rounded back
-    positions[bi3] = frontPositions[i3] - nx * shellThickness;
-    positions[bi3 + 1] = frontPositions[i3 + 1] - ny * shellThickness;
-    positions[bi3 + 2] = frontPositions[i3 + 2] - nz * shellThickness;
-
-    // Back normals point inward (inverted)
-    normals[bi3] = -nx;
-    normals[bi3 + 1] = -ny;
-    normals[bi3 + 2] = -nz;
+    // Back normals point inward (inverted front normals for smooth shading)
+    normals[bi3] = -frontNormals[i3];
+    normals[bi3 + 1] = -frontNormals[i3 + 1];
+    normals[bi3 + 2] = -frontNormals[i3 + 2];
 
     uvs[bi2] = frontUvs[i * 2];
     uvs[bi2 + 1] = frontUvs[i * 2 + 1];
@@ -328,44 +323,27 @@ export function buildMeshData(
     for (let c = 0; c < 4; c++) {
       const srcIdx = c < 2 ? (c === 0 ? a : b) : (c === 2 ? a : b);
       const isBack = c >= 2;
+      const srcBase = srcIdx * 3;
       const dstV = sv + c;
 
-      const srcNx = frontNormals[srcIdx * 3];
-      const srcNy = frontNormals[srcIdx * 3 + 1];
-      const srcNz = frontNormals[srcIdx * 3 + 2];
+      positions[dstV * 3] = frontPositions[srcBase];
+      positions[dstV * 3 + 1] = frontPositions[srcBase + 1];
+      positions[dstV * 3 + 2] = frontPositions[srcBase + 2] - (isBack ? shellThickness : 0);
 
-      if (isBack) {
-        positions[dstV * 3] = frontPositions[srcIdx * 3] - srcNx * shellThickness;
-        positions[dstV * 3 + 1] = frontPositions[srcIdx * 3 + 1] - srcNy * shellThickness;
-        positions[dstV * 3 + 2] = frontPositions[srcIdx * 3 + 2] - srcNz * shellThickness;
-      } else {
-        positions[dstV * 3] = frontPositions[srcIdx * 3];
-        positions[dstV * 3 + 1] = frontPositions[srcIdx * 3 + 1];
-        positions[dstV * 3 + 2] = frontPositions[srcIdx * 3 + 2];
-      }
-
-      // Skirt normals: approximate as outward-facing (average of endpoint normals projected outward)
-      // Use the front normal rotated sideways as an approximation
-      const na3 = a * 3, nb3 = b * 3;
-      const avgNx = (frontNormals[na3] + frontNormals[nb3]) * 0.5;
-      const avgNy = (frontNormals[na3 + 1] + frontNormals[nb3 + 1]) * 0.5;
-      const avgNz = (frontNormals[na3 + 2] + frontNormals[nb3 + 2]) * 0.5;
-
-      // Edge direction
+      // Skirt normal: outward-facing perpendicular to edge
       const ex = frontPositions[b * 3] - frontPositions[a * 3];
       const ey = frontPositions[b * 3 + 1] - frontPositions[a * 3 + 1];
-      const ez = frontPositions[b * 3 + 2] - frontPositions[a * 3 + 2];
-
-      // Outward normal = cross(edge, avgNormal)
-      let onx = ey * avgNz - ez * avgNy;
-      let ony = ez * avgNx - ex * avgNz;
-      let onz = ex * avgNy - ey * avgNx;
-      const olen = Math.sqrt(onx * onx + ony * ony + onz * onz);
-      if (olen > 0) { onx /= olen; ony /= olen; onz /= olen; }
-
-      normals[dstV * 3] = onx;
-      normals[dstV * 3 + 1] = ony;
-      normals[dstV * 3 + 2] = onz;
+      // Cross with Z-axis to get outward direction in XY plane
+      const len2d = Math.sqrt(ex * ex + ey * ey);
+      if (len2d > 0) {
+        normals[dstV * 3] = ey / len2d;
+        normals[dstV * 3 + 1] = -ex / len2d;
+        normals[dstV * 3 + 2] = 0;
+      } else {
+        normals[dstV * 3] = 0;
+        normals[dstV * 3 + 1] = 0;
+        normals[dstV * 3 + 2] = -1;
+      }
 
       uvs[dstV * 2] = frontUvs[srcIdx * 2];
       uvs[dstV * 2 + 1] = frontUvs[srcIdx * 2 + 1];
