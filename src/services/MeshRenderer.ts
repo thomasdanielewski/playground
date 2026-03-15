@@ -161,7 +161,11 @@ export class MeshRenderer {
     geo.setAttribute('position', new THREE.BufferAttribute(meshData.positions, 3));
     geo.setAttribute('uv', new THREE.BufferAttribute(meshData.uvs, 2));
     geo.setIndex(new THREE.BufferAttribute(meshData.indices, 1));
-    geo.computeVertexNormals();
+    if (meshData.normals && meshData.normals.length > 0) {
+      geo.setAttribute('normal', new THREE.BufferAttribute(meshData.normals, 3));
+    } else {
+      geo.computeVertexNormals();
+    }
 
     const texture = await new Promise<THREE.Texture>((resolve, reject) => {
       new THREE.TextureLoader().load(

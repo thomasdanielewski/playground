@@ -5,6 +5,7 @@
 
 export interface MeshData {
   positions: Float32Array;
+  normals: Float32Array;
   indices: Uint32Array;
   uvs: Float32Array;
   vertexCount: number;
@@ -140,7 +141,7 @@ function shouldEmitTriangle(
 }
 
 /**
- * Build a triangle mesh from depth data with optional foreground mask.
+ * Build a triangle mesh from depth data with optional foreground mask and surface normals.
  */
 export function buildMeshData(
   depthData: Uint8Array,
@@ -148,16 +149,17 @@ export function buildMeshData(
   height: number,
   mask: Uint8Array | null,
   depthScale = 1.5,
-  shellThickness = 0.15
+  shellThickness = 0.3,
+  normalData: Float32Array | null = null
 ): MeshData {
   const numVertices = width * height;
-  const requiredBytes = numVertices * 2 * (3 + 2) * 4;
+  const requiredBytes = numVertices * 2 * (3 + 3 + 2) * 4;
   if (requiredBytes > 2_000_000_000) {
     throw new RangeError(`Mesh requires ~${(requiredBytes / 1e9).toFixed(1)} GB — reduce image resolution.`);
   }
 
   if (mask) {
-    mask = erodeMask(mask, width, height, 2);
+    mask = erodeMask(mask, width, height, 1);
     mask = largestConnectedComponent(mask, width, height);
     depthData = healDepthBoundary(depthData, mask, width, height);
   }
@@ -169,12 +171,13 @@ export function buildMeshData(
     if (depthData[i] > dMax) dMax = depthData[i];
   }
   const dRange = Math.max(dMax - dMin, 1);
-  const DEPTH_THRESHOLD = dRange * 0.20;
+  const DEPTH_THRESHOLD = dRange * 0.35;
 
   const scale = 2.0 / Math.max(width, height);
 
-  // Front surface vertices
+  // Front surface vertices + normals
   const frontPositions = new Float32Array(numVertices * 3);
+  const frontNormals = new Float32Array(numVertices * 3);
   const frontUvs = new Float32Array(numVertices * 2);
 
   for (let y = 0; y < height; y++) {
@@ -187,6 +190,17 @@ export function buildMeshData(
       frontPositions[i3 + 2] = ((depthData[i] - dMin) / dRange) * depthScale;
       frontUvs[i2] = x / (width - 1);
       frontUvs[i2 + 1] = y / (height - 1);
+
+      // Per-vertex normals from normal map or default
+      if (normalData) {
+        frontNormals[i3] = normalData[i3];
+        frontNormals[i3 + 1] = normalData[i3 + 1];
+        frontNormals[i3 + 2] = normalData[i3 + 2];
+      } else {
+        frontNormals[i3] = 0;
+        frontNormals[i3 + 1] = 0;
+        frontNormals[i3 + 2] = 1;
+      }
     }
   }
 
@@ -225,7 +239,7 @@ export function buildMeshData(
     }
   }
 
-  // Find boundary edges — use string keys to avoid integer overflow for large images
+  // Find boundary edges
   const edgeCounts = new Map<string, number>();
   const edgeKey = (a: number, b: number) => `${Math.min(a, b)},${Math.max(a, b)}`;
 
@@ -253,30 +267,48 @@ export function buildMeshData(
   const totalTriCount = frontTriCount + backTriCount + skirtTriCount;
 
   const positions = new Float32Array(totalVertices * 3);
+  const normals = new Float32Array(totalVertices * 3);
   const uvs = new Float32Array(totalVertices * 2);
   const indices = new Uint32Array(totalTriCount * 3);
 
+  // Front surface
   positions.set(frontPositions);
+  normals.set(frontNormals);
   uvs.set(frontUvs);
 
+  // Back surface — displace along inverted normal for rounded back
   const backOffset = numVertices;
   for (let i = 0; i < numVertices; i++) {
     const i3 = i * 3;
     const bi3 = (i + backOffset) * 3;
     const bi2 = (i + backOffset) * 2;
-    positions[bi3] = frontPositions[i3];
-    positions[bi3 + 1] = frontPositions[i3 + 1];
-    positions[bi3 + 2] = frontPositions[i3 + 2] - shellThickness;
+
+    const nx = frontNormals[i3];
+    const ny = frontNormals[i3 + 1];
+    const nz = frontNormals[i3 + 2];
+
+    // Displace along inverted normal for rounded back
+    positions[bi3] = frontPositions[i3] - nx * shellThickness;
+    positions[bi3 + 1] = frontPositions[i3 + 1] - ny * shellThickness;
+    positions[bi3 + 2] = frontPositions[i3 + 2] - nz * shellThickness;
+
+    // Back normals point inward (inverted)
+    normals[bi3] = -nx;
+    normals[bi3 + 1] = -ny;
+    normals[bi3 + 2] = -nz;
+
     uvs[bi2] = frontUvs[i * 2];
     uvs[bi2 + 1] = frontUvs[i * 2 + 1];
   }
 
+  // Front indices
   let idxOffset = 0;
   for (let i = 0; i < frontTriCount * 3; i++) {
     indices[i] = frontIndices[i];
   }
   idxOffset = frontTriCount * 3;
 
+  // Back indices (reversed winding)
   for (let t = 0; t < frontTriCount; t++) {
     const src = t * 3;
     const dst = idxOffset + t * 3;
@@ -286,19 +318,55 @@ export function buildMeshData(
   }
   idxOffset += backTriCount * 3;
 
+  // Side skirt connecting front and back boundary edges
   const skirtBaseVertex = numVertices * 2;
   for (let e = 0; e < boundaryEdges.length; e++) {
     const [a, b] = boundaryEdges[e];
     const sv = skirtBaseVertex + e * 4;
 
+    // 4 vertices per skirt quad: frontA, frontB, backA, backB
     for (let c = 0; c < 4; c++) {
       const srcIdx = c < 2 ? (c === 0 ? a : b) : (c === 2 ? a : b);
       const isBack = c >= 2;
-      const srcBase = srcIdx * 3;
       const dstV = sv + c;
-      positions[dstV * 3] = frontPositions[srcBase];
-      positions[dstV * 3 + 1] = frontPositions[srcBase + 1];
-      positions[dstV * 3 + 2] = frontPositions[srcBase + 2] - (isBack ? shellThickness : 0);
+
+      const srcNx = frontNormals[srcIdx * 3];
+      const srcNy = frontNormals[srcIdx * 3 + 1];
+      const srcNz = frontNormals[srcIdx * 3 + 2];
+
+      if (isBack) {
+        positions[dstV * 3] = frontPositions[srcIdx * 3] - srcNx * shellThickness;
+        positions[dstV * 3 + 1] = frontPositions[srcIdx * 3 + 1] - srcNy * shellThickness;
+        positions[dstV * 3 + 2] = frontPositions[srcIdx * 3 + 2] - srcNz * shellThickness;
+      } else {
+        positions[dstV * 3] = frontPositions[srcIdx * 3];
+        positions[dstV * 3 + 1] = frontPositions[srcIdx * 3 + 1];
+        positions[dstV * 3 + 2] = frontPositions[srcIdx * 3 + 2];
+      }
+
+      // Skirt normals: approximate as outward-facing (average of endpoint normals projected outward)
+      // Use the front normal rotated sideways as an approximation
+      const na3 = a * 3, nb3 = b * 3;
+      const avgNx = (frontNormals[na3] + frontNormals[nb3]) * 0.5;
+      const avgNy = (frontNormals[na3 + 1] + frontNormals[nb3 + 1]) * 0.5;
+      const avgNz = (frontNormals[na3 + 2] + frontNormals[nb3 + 2]) * 0.5;
+
+      // Edge direction
+      const ex = frontPositions[b * 3] - frontPositions[a * 3];
+      const ey = frontPositions[b * 3 + 1] - frontPositions[a * 3 + 1];
+      const ez = frontPositions[b * 3 + 2] - frontPositions[a * 3 + 2];
+
+      // Outward normal = cross(edge, avgNormal)
+      let onx = ey * avgNz - ez * avgNy;
+      let ony = ez * avgNx - ex * avgNz;
+      let onz = ex * avgNy - ey * avgNx;
+      const olen = Math.sqrt(onx * onx + ony * ony + onz * onz);
+      if (olen > 0) { onx /= olen; ony /= olen; onz /= olen; }
+
+      normals[dstV * 3] = onx;
+      normals[dstV * 3 + 1] = ony;
+      normals[dstV * 3 + 2] = onz;
+
       uvs[dstV * 2] = frontUvs[srcIdx * 2];
       uvs[dstV * 2 + 1] = frontUvs[srcIdx * 2 + 1];
     }
@@ -314,6 +382,7 @@ export function buildMeshData(
 
   return {
     positions,
+    normals,
     indices,
     uvs,
     vertexCount: totalVertices,

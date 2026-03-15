@@ -1,15 +1,16 @@
 import { useState } from 'react';
 
-type Tab = 'source' | 'depth' | 'mask' | '3d';
+type Tab = 'source' | 'depth' | 'mask' | 'normals' | '3d';
 
 interface Props {
   sourceUrl: string | null;
   depthMapUrl: string | null;
   maskUrl: string | null;
+  normalMapUrl?: string | null;
   onSelectTab: (tab: Tab) => void;
 }
 
-export default function ComparisonView({ sourceUrl, depthMapUrl, maskUrl, onSelectTab }: Props) {
+export default function ComparisonView({ sourceUrl, depthMapUrl, maskUrl, normalMapUrl, onSelectTab }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('3d');
 
   const tabs: { id: Tab; label: string; available: boolean }[] = [
@@ -17,6 +18,7 @@ export default function ComparisonView({ sourceUrl, depthMapUrl, maskUrl, onSele
     { id: 'source', label: 'Source', available: !!sourceUrl },
     { id: 'depth', label: 'Depth', available: !!depthMapUrl },
     { id: 'mask', label: 'Mask', available: !!maskUrl },
+    { id: 'normals', label: 'Normals', available: !!normalMapUrl },
   ];
 
   const handleTab = (tab: Tab) => {
@@ -46,7 +48,7 @@ export default function ComparisonView({ sourceUrl, depthMapUrl, maskUrl, onSele
         ))}
       </div>
 
-      {/* Image overlay (source / depth / mask) */}
+      {/* Image overlay (source / depth / mask / normals) */}
       {activeTab !== '3d' && (
         <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-black/50 border border-white/[0.06] animate-fade-in">
           {activeTab === 'source' && sourceUrl && (
@@ -57,6 +59,9 @@ export default function ComparisonView({ sourceUrl, depthMapUrl, maskUrl, onSele
           )}
           {activeTab === 'mask' && maskUrl && (
             <img src={maskUrl} alt="Mask" className="w-full h-full object-contain" />
+          )}
+          {activeTab === 'normals' && normalMapUrl && (
+            <img src={normalMapUrl} alt="Normal map" className="w-full h-full object-contain" />
           )}
         </div>
       )}

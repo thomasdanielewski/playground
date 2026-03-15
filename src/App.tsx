@@ -18,6 +18,7 @@ interface MeshWorkerInput {
   rangeSigma: number;
   depthScale: number;
   shellThickness: number;
+  normalStrength: number;
 }
 import UploadPanel from './components/UploadPanel';
 import type { UploadPanelHandle } from './components/UploadPanel';
@@ -89,6 +90,23 @@ function maskToImageUrl(mask: Uint8Array, w: number, h: number): string {
   return canvas.toDataURL();
 }
 
+/** Render a Float32Array normal map to a data URL (RGB: XYZ mapped from [-1,1] to [0,255]) */
+function normalMapToImageUrl(normals: Float32Array, w: number, h: number): string {
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d')!;
+  const img = ctx.createImageData(w, h);
+  for (let i = 0; i < w * h; i++) {
+    img.data[i * 4] = Math.round((normals[i * 3] * 0.5 + 0.5) * 255);
+    img.data[i * 4 + 1] = Math.round((normals[i * 3 + 1] * 0.5 + 0.5) * 255);
+    img.data[i * 4 + 2] = Math.round((normals[i * 3 + 2] * 0.5 + 0.5) * 255);
+    img.data[i * 4 + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  return canvas.toDataURL();
+}
+
 // ── Main application ──────────────────────────────────────
 export default function App() {
   // Services (lazy init)
@@ -121,11 +139,13 @@ export default function App() {
   const [rootDragOver, setRootDragOver] = useState(false);
   const [depthScale, setDepthScale] = useState(1.5);
   const [smoothing, setSmoothing] = useState(5);
+  const [normalStrength, setNormalStrength] = useState(2.0);
   const [exportFormat, setExportFormat] = useState<ExportFormat>('glb');
   const [showComparison, setShowComparison] = useState(false);
-  const [comparisonTab, setComparisonTab] = useState<'3d' | 'source' | 'depth' | 'mask'>('3d');
+  const [comparisonTab, setComparisonTab] = useState<'3d' | 'source' | 'depth' | 'mask' | 'normals'>('3d');
   const [depthMapUrl, setDepthMapUrl] = useState<string | null>(null);
   const [maskUrl, setMaskUrl] = useState<string | null>(null);
+  const [normalMapUrl, setNormalMapUrl] = useState<string | null>(null);
   const [mobileCollapsed, setMobileCollapsed] = useState(false);
 
   // Batch queue
@@ -206,6 +226,7 @@ export default function App() {
     mask: Uint8Array | null,
     dScale: number,
     smooth: number,
+    nStrength: number,
     signal: AbortSignal
   ): Promise<MeshData> => {
     return new Promise((resolve, reject) => {
@@ -233,7 +254,8 @@ export default function App() {
         spatialSigma: 4.0,
         rangeSigma: 20,
         depthScale: dScale,
-        shellThickness: 0.15,
+        shellThickness: 0.3,
+        normalStrength: nStrength,
       };
 
       const transfers: ArrayBuffer[] = [depthData.buffer];
@@ -342,10 +364,16 @@ export default function App() {
         mask,
         depthScale,
         smoothing,
+        normalStrength,
         signal
       );
       if (signal.aborted) return;
       setTriangleCount(meshData.triangleCount);
+
+      // Generate normal map for comparison view
+      if (meshData.normals && meshData.normals.length > 0) {
+        setNormalMapUrl(normalMapToImageUrl(meshData.normals, depthResult.width, depthResult.height));
+      }
 
       // 5. Render
       await renderer.setMesh(meshData, processed.url);
@@ -369,10 +397,10 @@ export default function App() {
       setErrorMessage(classifyError(err));
       setPhase('error');
     }
-  }, [depthScale, smoothing, buildMeshViaWorker]);
+  }, [depthScale, smoothing, normalStrength, buildMeshViaWorker]);
 
   // ── Rebuild mesh from sliders (skip inference) ──────────
-  const rebuildMesh = useCallback(async (dScale: number, smooth: number) => {
+  const rebuildMesh = useCallback(async (dScale: number, smooth: number, nStrength: number) => {
     const renderer = rendererRef.current;
     const saved = lastInferenceRef.current;
     if (!renderer || !saved) return;
@@ -390,11 +418,15 @@ export default function App() {
         new Uint8Array(saved.mask),
         dScale,
         smooth,
+        nStrength,
         controller.signal
       );
       if (controller.signal.aborted) return;
 
       setTriangleCount(meshData.triangleCount);
+      if (meshData.normals && meshData.normals.length > 0) {
+        setNormalMapUrl(normalMapToImageUrl(meshData.normals, saved.width, saved.height));
+      }
       await renderer.setMesh(meshData, saved.imageUrl);
       renderer.resetCamera();
       setPhase('done');
@@ -622,11 +654,12 @@ export default function App() {
               sourceUrl={thumbnailUrl}
               depthMapUrl={depthMapUrl}
               maskUrl={maskUrl}
+              normalMapUrl={normalMapUrl}
               onSelectTab={(tab) => setComparisonTab(tab)}
             />
           )}
 
-          {/* Depth / Smoothing sliders */}
+          {/* Depth / Smoothing / Normal sliders */}
           {phase === 'done' && (
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
@@ -640,8 +673,8 @@ export default function App() {
                 step="0.1"
                 value={depthScale}
                 onChange={(e) => setDepthScale(parseFloat(e.target.value))}
-                onMouseUp={() => rebuildMesh(depthScale, smoothing)}
-                onTouchEnd={() => rebuildMesh(depthScale, smoothing)}
+                onMouseUp={() => rebuildMesh(depthScale, smoothing, normalStrength)}
+                onTouchEnd={() => rebuildMesh(depthScale, smoothing, normalStrength)}
                 className="w-full"
               />
               <div className="flex items-center justify-between">
@@ -655,8 +688,23 @@ export default function App() {
                 step="1"
                 value={smoothing}
                 onChange={(e) => setSmoothing(parseInt(e.target.value))}
-                onMouseUp={() => rebuildMesh(depthScale, smoothing)}
-                onTouchEnd={() => rebuildMesh(depthScale, smoothing)}
+                onMouseUp={() => rebuildMesh(depthScale, smoothing, normalStrength)}
+                onTouchEnd={() => rebuildMesh(depthScale, smoothing, normalStrength)}
+                className="w-full"
+              />
+              <div className="flex items-center justify-between">
+                <label className="text-[9px] text-zinc-500 uppercase tracking-wider">Curvature</label>
+                <span className="text-[9px] font-mono text-zinc-400">{normalStrength.toFixed(1)}</span>
+              </div>
+              <input
+                type="range"
+                min="0.5"
+                max="5.0"
+                step="0.1"
+                value={normalStrength}
+                onChange={(e) => setNormalStrength(parseFloat(e.target.value))}
+                onMouseUp={() => rebuildMesh(depthScale, smoothing, normalStrength)}
+                onTouchEnd={() => rebuildMesh(depthScale, smoothing, normalStrength)}
                 className="w-full"
               />
             </div>
