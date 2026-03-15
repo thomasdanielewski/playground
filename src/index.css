@@ -115,20 +115,43 @@ input[type="range"]::-moz-range-thumb {
   border: 2px solid #08080a;
 }
 
+/* ── Panel layout: left sidebar on desktop ─────────── */
+
+.control-panel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 10;
+  pointer-events: none;
+  display: flex;
+  padding: 16px;
+  height: 100%;
+  align-items: flex-start;
+}
+
+.control-panel-inner {
+  pointer-events: auto;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  width: 280px;
+}
+
 /* ── Mobile layout ─────────────────────────────────── */
 
 @media (max-width: 640px) {
   .control-panel {
     top: auto !important;
     bottom: 0 !important;
-    align-items: stretch !important;
+    left: 0 !important;
+    right: 0 !important;
+    height: auto !important;
     padding: 0 !important;
+    align-items: stretch !important;
   }
 
   .control-panel-inner {
-    max-width: 100% !important;
+    width: 100% !important;
     max-height: 60vh;
-    overflow-y: auto;
     border-radius: 1rem 1rem 0 0 !important;
   }
 

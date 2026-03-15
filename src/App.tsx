@@ -534,8 +534,8 @@ export default function App() {
       )}
 
       {/* ── Control Panel ────────────────────────── */}
-      <div className="control-panel absolute top-0 left-0 w-full p-5 z-10 pointer-events-none flex flex-col items-center">
-        <div className={`control-panel-inner pointer-events-auto glass-panel rounded-2xl p-5 max-w-[340px] w-full flex flex-col gap-3 animate-fade-in ${mobileCollapsed ? 'max-h-[48px] overflow-hidden' : ''}`}>
+      <div className="control-panel">
+        <div className={`control-panel-inner glass-panel rounded-2xl p-4 flex flex-col gap-2.5 animate-fade-in ${mobileCollapsed ? 'max-h-[48px] overflow-hidden' : ''}`}>
 
           {/* Mobile drag handle */}
           <div
@@ -545,20 +545,20 @@ export default function App() {
 
           {/* Header */}
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               {thumbnailUrl && (phase === 'done' || isProcessing) && (
                 <img
                   src={thumbnailUrl}
                   alt="Input"
-                  className="w-8 h-8 rounded-lg object-cover border border-white/[0.06]"
+                  className="w-7 h-7 rounded-md object-cover border border-white/[0.06] flex-shrink-0"
                 />
               )}
-              <div>
-                <h1 className="text-[15px] font-semibold tracking-tight">
+              <div className="min-w-0">
+                <h1 className="text-[13px] font-semibold tracking-tight">
                   2D → 3D Mesh
                 </h1>
-                <p className="text-[10px] text-zinc-500 mt-0.5 uppercase tracking-widest">
-                  AI Depth + Background Removal
+                <p className="text-[9px] text-zinc-500 mt-0.5 uppercase tracking-widest">
+                  AI Depth + BG Removal
                 </p>
               </div>
             </div>
@@ -596,7 +596,7 @@ export default function App() {
 
           {/* Material toggle */}
           {phase === 'done' && (
-            <div className="flex gap-1.5">
+            <div className="flex gap-1">
               {(['clay', 'textured', 'wireframe'] as const).map((mode) => (
                 <button
                   key={mode}
@@ -604,7 +604,7 @@ export default function App() {
                     setMaterialMode(mode);
                     rendererRef.current?.setMaterialMode(mode);
                   }}
-                  className={`flex-1 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${
+                  className={`flex-1 py-1 rounded-md text-[10px] font-medium transition-colors ${
                     materialMode === mode
                       ? 'bg-white/15 text-white'
                       : 'bg-white/[0.06] text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.08]'
@@ -628,10 +628,10 @@ export default function App() {
 
           {/* Depth / Smoothing sliders */}
           {phase === 'done' && (
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
-                <label className="text-[10px] text-zinc-500 uppercase tracking-wider">Depth</label>
-                <span className="text-[10px] font-mono text-zinc-400">{depthScale.toFixed(1)}</span>
+                <label className="text-[9px] text-zinc-500 uppercase tracking-wider">Depth</label>
+                <span className="text-[9px] font-mono text-zinc-400">{depthScale.toFixed(1)}</span>
               </div>
               <input
                 type="range"
@@ -645,8 +645,8 @@ export default function App() {
                 className="w-full"
               />
               <div className="flex items-center justify-between">
-                <label className="text-[10px] text-zinc-500 uppercase tracking-wider">Smoothing</label>
-                <span className="text-[10px] font-mono text-zinc-400">{smoothing}</span>
+                <label className="text-[9px] text-zinc-500 uppercase tracking-wider">Smoothing</label>
+                <span className="text-[9px] font-mono text-zinc-400">{smoothing}</span>
               </div>
               <input
                 type="range"
@@ -664,11 +664,11 @@ export default function App() {
 
           {/* Export */}
           {phase === 'done' && (
-            <div className="flex gap-1.5">
+            <div className="flex gap-1">
               <select
                 value={exportFormat}
                 onChange={(e) => setExportFormat(e.target.value as ExportFormat)}
-                className="bg-white/[0.06] border border-white/[0.06] rounded-lg text-[11px] text-zinc-300 px-2 py-2 outline-none cursor-pointer"
+                className="bg-white/[0.06] border border-white/[0.06] rounded-md text-[10px] text-zinc-300 px-1.5 py-1.5 outline-none cursor-pointer"
               >
                 <option value="glb">GLB</option>
                 <option value="obj">OBJ</option>
@@ -677,11 +677,11 @@ export default function App() {
               <button
                 onClick={handleExport}
                 disabled={isExporting}
-                className="flex-1 py-2 rounded-lg border border-white/[0.06] bg-white/[0.06] hover:bg-white/[0.1] transition-colors text-[12px] font-medium text-zinc-300 hover:text-white flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 py-1.5 rounded-md border border-white/[0.06] bg-white/[0.06] hover:bg-white/[0.1] transition-colors text-[11px] font-medium text-zinc-300 hover:text-white flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
-                  width="14" height="14" viewBox="0 0 24 24" fill="none"
+                  width="12" height="12" viewBox="0 0 24 24" fill="none"
                   stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"
                   strokeWidth="1.5"
                   className="text-zinc-400"
@@ -710,8 +710,8 @@ export default function App() {
 
           {/* Footer */}
           <div className="h-px bg-white/[0.06]" />
-          <p className="text-[9px] text-zinc-600 text-center leading-tight tracking-wide uppercase">
-            All processing runs locally on your device · <span className="text-zinc-700">Ctrl+O to upload</span>
+          <p className="text-[8px] text-zinc-600 text-center leading-tight tracking-wide uppercase">
+            Runs locally on your device · <span className="text-zinc-700">Ctrl+O</span>
           </p>
         </div>
       </div>

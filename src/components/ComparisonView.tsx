@@ -27,13 +27,13 @@ export default function ComparisonView({ sourceUrl, depthMapUrl, maskUrl, onSele
   return (
     <div className="flex flex-col gap-2">
       {/* Tab bar */}
-      <div className="flex gap-1 p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+      <div className="flex gap-0.5 p-0.5 rounded-md bg-white/[0.03] border border-white/[0.06]">
         {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => tab.available && handleTab(tab.id)}
             disabled={!tab.available}
-            className={`flex-1 py-1 rounded-md text-[11px] font-medium transition-colors ${
+            className={`flex-1 py-0.5 rounded text-[10px] font-medium transition-colors ${
               activeTab === tab.id
                 ? 'bg-white/15 text-white'
                 : tab.available
